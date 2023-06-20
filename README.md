@@ -2,7 +2,7 @@
 This repo contains the segmentation step for debugging purposes using Mask-RCNN models.
 
 ## How to run
-1. Install required packages ```pip install -u requirements.txt``` (advisable to use a virtual environment)
+1. Install required packages ```pip install requirements.txt``` (advisable to use a virtual environment)
 2. ```python main.py input output``` Where ```input``` is the tiff file to segment and ```output``` is the directory to store the output tff.
 
 The reference model is located at hits/lsp-analysis/UnMICSTdev/FOR ALEX HUMAN ANNOTATIONS USE THESE/models_that_work/model_trained_without_ignore_manyWindowsAndSynthetic.pt
