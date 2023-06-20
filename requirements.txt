@@ -1,0 +1,7 @@
+matplotlib
+torch
+torchvision
+napari
+tifffile
+numpy
+tqdm
