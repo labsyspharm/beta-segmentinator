@@ -1,6 +1,8 @@
 # UnMicst Segmentation step (Segmentinator... inator)
 This repo contains the segmentation step for debugging purposes using Mask-RCNN models.
 
+![segmentinator logo](https://github.com/labsyspharm/beta-segmentinator/blob/master/image.png?raw=true)
+
 ## How to run
 1. Install required packages ```pip install requirements.txt``` (advisable to use a virtual environment)
 2. ```python main.py input output``` Where ```input``` is the tiff file to segment and ```output``` is the directory to store the output tff.
