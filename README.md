@@ -12,6 +12,7 @@ The reference model is located at hits/lsp-analysis/UnMICSTdev/FOR ALEX HUMAN AN
 ### If you find bugs or comments please open an issue in this repo so we can keep track of them, remember to add as much detail as posible.
 
 ## IMPORTANT
+- **This model has been trained with 0.325 microns per pixel, you should be wary of different resolutions.**
 - Use gpu, otherwise it take a while.
 - **The ```---mode-path``` flag is necesary with the full path to the saved model file to load that instead of the default.**
 - For documentation on the available flags, just run ``` python main.py``` without arguments or ```python main.py -h```.
