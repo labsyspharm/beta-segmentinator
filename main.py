@@ -295,7 +295,7 @@ def pipeline(args):
         tiff = tiff[0]
     original_shape = tiff.shape
 
-    if len(os.listdir(os.path.join(args.output, "step1"))) == 0 or True:
+    if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
         print("No previous run found")
         os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
 
@@ -405,6 +405,10 @@ if __name__ == "__main__":
 
     if not os.path.exists(args.output):
         os.makedirs(args.output, exist_ok=True)
+        os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
+        
+    if not os.path.exists(os.path.join(args.output, "step1")):
+        os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
 
     with torch.no_grad():
         pipeline(args)
