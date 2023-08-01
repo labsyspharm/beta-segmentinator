@@ -246,7 +246,7 @@ def tile_extraction_part(args, tiff, model):
             tile = torchvision.transforms.functional.crop(tiff, tiff.shape[0] - args.tile_size, j, args.tile_size, args.tile_size)
             tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
             res = model([tile])[0]
-            res = filter_tile(res, TILE_AREA, tiff.shape[0] - args.tile_size, j)
+            res = filter_tile(args, res, TILE_AREA, tiff.shape[0] - args.tile_size, j)
 
             save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
             counter += 1
@@ -259,7 +259,7 @@ def tile_extraction_part(args, tiff, model):
             tile = torchvision.transforms.functional.crop(tiff, i, tiff.shape[1] - args.tile_size, args.tile_size, args.tile_size)
             tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
             res = model([tile])[0]
-            res = filter_tile(res, TILE_AREA, i, tiff.shape[1] - args.tile_size)
+            res = filter_tile(args, res, TILE_AREA, i, tiff.shape[1] - args.tile_size)
 
             save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
             counter += 1
@@ -270,7 +270,7 @@ def tile_extraction_part(args, tiff, model):
                                                       args.tile_size)
         tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
         res = model([tile])[0]
-        res = filter_tile(res, TILE_AREA, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size)
+        res = filter_tile(args, res, TILE_AREA, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size)
 
         save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
         counter += 1
