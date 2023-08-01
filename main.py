@@ -48,7 +48,7 @@ def normalize_8_bit(image):
         raise Exception("Invalid dtype {}".format(image.dtype))
 
 
-def filter_tile(res, tile_area, i, j):
+def filter_tile(args, res, tile_area, i, j):
     for key in res:
         res[key] = res[key].detach().cpu()
 
@@ -80,6 +80,15 @@ def filter_tile(res, tile_area, i, j):
     if len(res["boxes"]) == 0:
         return res
 
+    # filter boxes that end on tile edge
+    index = [not ((b < 3) | (b > args.tile_size - 3)).any() for b in res["boxes"]]
+
+    res["scores"] = res["scores"][index]
+    res["masks"] = res["masks"][index]
+    res["boxes"] = res["boxes"][index]
+
+    if len(res["boxes"]) == 0:
+        return res
     # keep only decently sized cells
     index = [(b[2] - b[0]) * (b[3] - b[1]) > 30 for b in res["boxes"]]
     res["scores"] = res["scores"][index]
@@ -183,7 +192,7 @@ def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter, need
         res = call_model_from_lock(model, [tile])
     else:
         res = model([tile])[0]
-    res = filter_tile(res, args.tile_size ** 2, coordX, coordY)
+    res = filter_tile(args, res, args.tile_size ** 2, coordX, coordY)
 
     if len(res["boxes"]) != 0:
         save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
@@ -200,7 +209,7 @@ def tile_extraction_part_mt(args, tiff, model):
         )
     pool.join()
 
-def tile_extraction_part(tiff, model):
+def tile_extraction_part(args, tiff, model):
     TILE_AREA = args.tile_size ** 2
     counter = 0
 
@@ -317,7 +326,7 @@ def pipeline(args):
             torch.multiprocessing.set_start_method("spawn", force=True)
             tile_extraction_part_mt(args, tiff, model)
         else:
-            tile_extraction_part(tiff, model)
+            tile_extraction_part(args, tiff, model)
 
         # free some memory
         del model
