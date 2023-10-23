@@ -8,6 +8,7 @@ import threading
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.patches
+import sklearn.mixture
 import torchvision.transforms.functional
 import napari
 import tifffile
@@ -32,6 +33,7 @@ def parse_args():
     output.add_argument("--rolling-window", type=int, help="How many pixels to move for each rolling window step.", default=10)
     output.add_argument("--parallel", action="store_true", help="Handle tiling in parallel. DO NOT USE!!")
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
+    output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
 
     return output.parse_args(sys.argv[1:])
 
@@ -47,6 +49,38 @@ def normalize_8_bit(image):
     else:
         raise Exception("Invalid dtype {}".format(image.dtype))
 
+
+def calculate_mask_threshold(original_tile):
+    """
+    This function takes in a prediction box and runs a 2 component GMM on the whole tile.
+    it then calcultates the threshold of \code{mean - sqrt(cov) * 2} to make sure you take in most of the cell pixels.
+    :param original_tile: This is a single box prediction from the original data, unscaled and untreated.
+    :return: The tile mask matrix.
+    """
+    gmm = sklearn.mixture.GaussianMixture(n_components=3)
+    gmm.fit(torch.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
+
+    m = gmm.means_
+    c = gmm.covariances_
+
+    index = numpy.where(m == sorted(m)[1])[0][0]
+
+    m = m[index]
+    c = c[index]
+
+    threshold = 10 ** (m - (torch.sqrt(c) * 2))
+
+    output = original_tile.clone()
+    output[output >= threshold] = 1
+    output[output < threshold] = 0
+
+    return output
+
+def foo(tiles):
+    output = list()
+    with multiprocessing.Pool(processes=None) as p:
+        output = p.apply(calculate_mask_threshold, tiles)
+    return output
 
 def filter_tile(args, res, tile_area, i, j):
     for key in res:
@@ -192,6 +226,7 @@ def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter, need
         res = call_model_from_lock(model, [tile])
     else:
         res = model([tile])[0]
+        
     res = filter_tile(args, res, args.tile_size ** 2, coordX, coordY)
 
     if len(res["boxes"]) != 0:
