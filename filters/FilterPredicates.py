@@ -23,7 +23,7 @@ class FilterPredicateHandler:
 
     def add_filter(self, filter: Predicate):
         if not isinstance(filter, Predicate):
-            raise AttributeError("Varible \"filter\" is expected to inheric from class Predicate, but is instead {}".format(type(filter)))
+            raise AttributeError("Variable \"filter\" is expected to inherit from class Predicate, but is instead {}".format(type(filter)))
 
         self.filters.append(filter)
 
