@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import multiprocessing
 import os.path
 import pickle
@@ -58,7 +59,7 @@ def calculate_mask_threshold(original_tile):
     :return: The tile mask matrix.
     """
     gmm = sklearn.mixture.GaussianMixture(n_components=3)
-    gmm.fit(torch.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
+    gmm.fit(numpy.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
 
     m = gmm.means_
     c = gmm.covariances_
@@ -68,9 +69,9 @@ def calculate_mask_threshold(original_tile):
     m = m[index]
     c = c[index]
 
-    threshold = 10 ** (m - (torch.sqrt(c) * 2))
+    threshold = 10 ** (m - (numpy.sqrt(c) * 2))
 
-    output = original_tile.clone()
+    output = numpy.copy(original_tile)
     output[output >= threshold] = 1
     output[output < threshold] = 0
 
@@ -322,6 +323,11 @@ def plot_full(tiff, boxes, scores):
     plt.show()
 
 
+def parallel_mask_generator(tiff, box, queue):
+    cell = tiff[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
+    mask = calculate_mask_threshold(cell)
+    return (box, mask)
+
 def pipeline(args):
     device = "cpu"
     original_shape = None
@@ -365,7 +371,7 @@ def pipeline(args):
 
         # free some memory
         del model
-    del tiff
+    #del tiff
 
     output = load_all_steps(os.path.join(args.output, "step1"))
 
@@ -383,18 +389,31 @@ def pipeline(args):
     final = numpy.zeros(original_shape)
     print(final.shape)
 
+    q = multiprocessing.Queue()
+
+    with multiprocessing.Pool(None) as p:
+        q = p.map(parallel_mask_generator, zip(itertools.repeat(tiff), output["boxes"]))
+
+    """
     for i in range(len(output["boxes"])):
         box = output["boxes"][i].type(torch.int)
-        anchor, mask = output["masks"][i]
+        print(box)
+        mask = calculate_mask_threshold(
+                tiff[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
+        )
         #mask = mask.reshape((args.tile_size, args.tile_size))
         mask = mask * (i + 1)
         if box[3] - box[1] != mask.shape[0] or box[2] - box[0] != mask.shape[1]:  # TODO wtf is this case?
-            print(box, mask.shape)
+            #print(box, mask.shape)
             mask = mask[0:min(mask.shape[0], box[3] - box[1]), 0:min(mask.shape[1], box[2] - box[0])]
             final[box[1]:box[1]+mask.shape[0], box[0]:box[0]+mask.shape[1]] += mask
         else:
             # TODO make changes that adapt to overlapping boxes and masks, XOR?
             final[box[1]:box[3], box[0]:box[2]] += mask
+    """
+
+    for box, mask in q:
+        final[box[1]:box[3], box[0]:box[2]] += mask
 
     if not args.no_viewer:
         viewer = napari.Viewer()
