@@ -85,7 +85,7 @@ def calculate_mask_threshold_mix(original_tile):
     :return: The tile mask matrix.
     """
     gmm = sklearn.mixture.GaussianMixture(n_components=3)
-    gmm.fit(numpy.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
+    gmm.fit(torch.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
 
     m = gmm.means_
     c = gmm.covariances_
@@ -97,7 +97,7 @@ def calculate_mask_threshold_mix(original_tile):
 
     threshold = 10 ** (m - (numpy.sqrt(c) * 2))
 
-    return threshold
+    return threshold.item()
 
 def foo(tiles):
     output = list()
@@ -416,20 +416,33 @@ def pipeline(args):
     print(final.shape)
 
     print("Thresholding")
-    threshold = calculate_mask_threshold_mix(tiff)
+    tiff = torch.FloatTensor([tiff])
+    supertile = torch.cat([
+        torchvision.transforms.functional.crop(
+            tiff,
+            x[1],
+            x[0],
+            x[3] - x[1],
+            x[2] - x[0]
+        ).flatten() for x in output["boxes"]
+    ])
+    threshold = calculate_mask_threshold_mix(supertile)
+
+    del supertile
 
     print("Creating masks")
-    cells = list()
     for i, box in enumerate(output["boxes"]):
-        cells.append(
-            (
-                box,
-                create_mask_from_tile(tiff[box[1]:box[3], box[0]:box[2]], threshold, i+1)
-            )
-        )
+        final[box[1]:box[3], box[0]:box[2]] += create_mask_from_tile(
+            torchvision.transforms.functional.crop(
+                tiff,
+                box[1],
+                box[0],
+                box[3] - box[1],
+                box[2] - box[0]
+            )[0],
+            threshold,
+            i+1)
 
-    for box, mask in cells:
-        final[box[1]:box[3], box[0]:box[2]] += mask
     """
     with multiprocessing.Pool(None) as p:
         data = p.map(create_mask_from_tile, (cells, itertools.repeat(threshold)))
