@@ -77,6 +77,28 @@ def calculate_mask_threshold(original_tile):
 
     return output
 
+def calculate_mask_threshold_mix(original_tile):
+    """
+    This function takes in a prediction box and runs a 2 component GMM on the whole tile.
+    it then calcultates the threshold of \code{mean - sqrt(cov) * 2} to make sure you take in most of the cell pixels.
+    :param original_tile: This is a single box prediction from the original data, unscaled and untreated.
+    :return: The tile mask matrix.
+    """
+    gmm = sklearn.mixture.GaussianMixture(n_components=3)
+    gmm.fit(numpy.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
+
+    m = gmm.means_
+    c = gmm.covariances_
+
+    index = numpy.where(m == sorted(m)[2])[0][0]
+
+    m = m[index]
+    c = c[index]
+
+    threshold = 10 ** (m - (numpy.sqrt(c) * 2))
+
+    return threshold
+
 def foo(tiles):
     output = list()
     with multiprocessing.Pool(processes=None) as p:
@@ -328,6 +350,13 @@ def parallel_mask_generator(tiff, box, queue):
     mask = calculate_mask_threshold(cell)
     return (box, mask)
 
+def create_mask_from_tile(cell, threshold, multiplier=None):
+    output = numpy.copy(cell)
+    output[cell >= threshold] = 1 if multiplier is None else multiplier
+    output[cell < threshold] = 0
+
+    return output
+
 def pipeline(args):
     device = "cpu"
     original_shape = None
@@ -374,27 +403,38 @@ def pipeline(args):
     #del tiff
 
     output = load_all_steps(os.path.join(args.output, "step1"))
+    del output["masks"]
 
     indexes = torchvision.ops.nms(output["boxes"], output["scores"], args.thres_nms).numpy()
 
-    output["boxes"] = output["boxes"][indexes]
+    output["boxes"] = output["boxes"][indexes].type(torch.int)
     output["scores"] = output["scores"][indexes]
-    temp = list()
-    for i in indexes:
-        temp.append(output["masks"][i])
-    output["masks"] = temp
 
     #plot_full(tiff, output["boxes"], output["scores"])
 
     final = numpy.zeros(original_shape)
     print(final.shape)
 
-    q = multiprocessing.Queue()
+    print("Thresholding")
+    threshold = calculate_mask_threshold_mix(tiff)
 
-    with multiprocessing.Pool(None) as p:
-        q = p.map(parallel_mask_generator, zip(itertools.repeat(tiff), output["boxes"]))
+    print("Creating masks")
+    cells = list()
+    for i, box in enumerate(output["boxes"]):
+        cells.append(
+            (
+                box,
+                create_mask_from_tile(tiff[box[1]:box[3], box[0]:box[2]], threshold, i+1)
+            )
+        )
 
+    for box, mask in cells:
+        final[box[1]:box[3], box[0]:box[2]] += mask
     """
+    with multiprocessing.Pool(None) as p:
+        data = p.map(create_mask_from_tile, (cells, itertools.repeat(threshold)))
+
+    
     for i in range(len(output["boxes"])):
         box = output["boxes"][i].type(torch.int)
         print(box)
@@ -411,13 +451,15 @@ def pipeline(args):
             # TODO make changes that adapt to overlapping boxes and masks, XOR?
             final[box[1]:box[3], box[0]:box[2]] += mask
     """
-
-    for box, mask in q:
-        final[box[1]:box[3], box[0]:box[2]] += mask
-
+    del tiff
     if not args.no_viewer:
         viewer = napari.Viewer()
-        viewer.add_image(tifffile.imread(args.input))
+        original = tifffile.imread(args.input)
+
+        if original.ndim >= 3 and original.shape[0] > 1:
+            original = original[0]
+
+        viewer.add_image(original)
         shapes = viewer.add_shapes(
             [
                 [
@@ -425,7 +467,7 @@ def pipeline(args):
                     [box[3].item(), box[2].item()]
                 ] for box in output["boxes"]
             ],
-            edge_width=2,
+            edge_width=1,
             edge_color="coral",
             text={"string": "{scores:.4f}", "anchor":"center", "color":"red", "size":6},
             features={"scores":[x.item() for x in output["scores"]]},
