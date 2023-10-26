@@ -1,15 +1,11 @@
 import argparse
-import itertools
-import multiprocessing
 import os.path
 import pickle
 import sys
-import threading
 
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.patches
-import sklearn.mixture
 import torchvision.transforms.functional
 import napari
 import tifffile
@@ -17,6 +13,8 @@ import torch.cuda
 import torchvision.ops
 import numpy
 import tqdm
+
+import MaskGenerator
 
 
 def parse_args():
@@ -32,11 +30,11 @@ def parse_args():
     output.add_argument("--model-path", type=str, help="Path to MaskRCNN segmentor.", default="/model.py")
     output.add_argument("--device", type=str, help="Device to run segmentation. eg \"cpu\" or \"cuda:N\" where N is gpu id.", default="cuda:0")
     output.add_argument("--rolling-window", type=int, help="How many pixels to move for each rolling window step.", default=10)
-    output.add_argument("--parallel", action="store_true", help="Handle tiling in parallel. DO NOT USE!!")
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
     output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
 
     return output.parse_args(sys.argv[1:])
+
 
 def normalize_8_bit(image):
     if image.dtype == numpy.int8:
@@ -50,60 +48,6 @@ def normalize_8_bit(image):
     else:
         raise Exception("Invalid dtype {}".format(image.dtype))
 
-
-def calculate_mask_threshold(original_tile):
-    """
-    This function takes in a prediction box and runs a 2 component GMM on the whole tile.
-    it then calcultates the threshold of \code{mean - sqrt(cov) * 2} to make sure you take in most of the cell pixels.
-    :param original_tile: This is a single box prediction from the original data, unscaled and untreated.
-    :return: The tile mask matrix.
-    """
-    gmm = sklearn.mixture.GaussianMixture(n_components=3)
-    gmm.fit(numpy.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
-
-    m = gmm.means_
-    c = gmm.covariances_
-
-    index = numpy.where(m == sorted(m)[1])[0][0]
-
-    m = m[index]
-    c = c[index]
-
-    threshold = 10 ** (m - (numpy.sqrt(c) * 2))
-
-    output = numpy.copy(original_tile)
-    output[output >= threshold] = 1
-    output[output < threshold] = 0
-
-    return output
-
-def calculate_mask_threshold_mix(original_tile):
-    """
-    This function takes in a prediction box and runs a 2 component GMM on the whole tile.
-    it then calcultates the threshold of \code{mean - sqrt(cov) * 2} to make sure you take in most of the cell pixels.
-    :param original_tile: This is a single box prediction from the original data, unscaled and untreated.
-    :return: The tile mask matrix.
-    """
-    gmm = sklearn.mixture.GaussianMixture(n_components=3)
-    gmm.fit(torch.log10(original_tile[original_tile > 0]).reshape((-1, 1)))
-
-    m = gmm.means_
-    c = gmm.covariances_
-
-    index = numpy.where(m == sorted(m)[2])[0][0]
-
-    m = m[index]
-    c = c[index]
-
-    threshold = 10 ** (m - (numpy.sqrt(c) * 2))
-
-    return threshold.item()
-
-def foo(tiles):
-    output = list()
-    with multiprocessing.Pool(processes=None) as p:
-        output = p.apply(calculate_mask_threshold, tiles)
-    return output
 
 def filter_tile(args, res, tile_area, i, j):
     for key in res:
@@ -167,6 +111,7 @@ def filter_tile(args, res, tile_area, i, j):
     n_masks = list()
 
     for k in range(len(res["masks"])):
+        """"
         res["masks"][k] = (res["masks"][k] >= args.thres_mask).astype(int)
 
         # trim mask to bounded box
@@ -177,6 +122,7 @@ def filter_tile(args, res, tile_area, i, j):
                                 ]
                          ))
         #n_masks.append( ( (j, i), res["masks"][k]) )
+        """
         # update boxes coordinates from tile coord to image coord
         res["boxes"][k][0] += j
         res["boxes"][k][1] += i
@@ -233,22 +179,12 @@ def load_all_steps(path):
 
     return output
 
-lock = threading.Lock()
 
-def call_model_from_lock(model, x):
-    lock.locked()
-    output = model(x)[0]
-    lock.release()
-    return output
-
-
-def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter, needs_lock=False):
+def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter):
     tile = torchvision.transforms.functional.crop(tiff, coordX, coordY, args.tile_size, args.tile_size)
     tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
-    if needs_lock:
-        res = call_model_from_lock(model, [tile])
-    else:
-        res = model([tile])[0]
+
+    res = model([tile])[0]
         
     res = filter_tile(args, res, args.tile_size ** 2, coordX, coordY)
 
@@ -256,22 +192,11 @@ def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter, need
         save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
 
 
-def tile_extraction_part_mt(args, tiff, model):
-    pool = multiprocessing.Pool()
-    width = tiff.shape[0]
-    pool.apply_async(extract_tile_run_model_save, args=[
-        (args, tiff, model, x, y, width * x + y)
-            for x in range(0, tiff.shape[1], args.rolling_window)
-            for y in range(0, tiff.shape[1], args.rolling_window)
-        ]
-        )
-    pool.join()
-
 def tile_extraction_part(args, tiff, model):
     TILE_AREA = args.tile_size ** 2
     counter = 0
 
-    # with tqdm.tqdm(total=int((args.tile_size/args.rolling_window) ** 2), desc="Tiles done: ") as bar:
+
     for i in tqdm.tqdm(range(0, tiff.shape[0], args.rolling_window), desc="out"):
         if i + args.tile_size > tiff.shape[0]:
             break
@@ -279,21 +204,9 @@ def tile_extraction_part(args, tiff, model):
         for j in tqdm.tqdm(range(0, tiff.shape[1], args.rolling_window), desc="in"):
             if j + args.tile_size > tiff.shape[1]:
                 break
-            """
-            #tile = tiff[i: i + args.tile_size, j: j + args.tile_size].reshape((1, args.tile_size, args.tile_size))
-            tile = torchvision.transforms.functional.crop(tiff, i, j, args.tile_size, args.tile_size)
-            tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
-            res = model([tile])[0]
-            res = filter_tile(res, TILE_AREA, i, j)
 
-            if len(res["boxes"]) != 0:
-                save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
-            """
             extract_tile_run_model_save(args, tiff, model, i, j, counter)
-            #del tile
-            #del res
             counter += 1
-    #            bar.update()
 
     if tiff.shape[0] % args.rolling_window != 0:
         # last row
@@ -301,12 +214,7 @@ def tile_extraction_part(args, tiff, model):
             if j + args.tile_size >= tiff.shape[1]:
                 break
 
-            tile = torchvision.transforms.functional.crop(tiff, tiff.shape[0] - args.tile_size, j, args.tile_size, args.tile_size)
-            tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
-            res = model([tile])[0]
-            res = filter_tile(args, res, TILE_AREA, tiff.shape[0] - args.tile_size, j)
-
-            save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
+            extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, j, counter)
             counter += 1
 
     if tiff.shape[1] % args.rolling_window != 0:
@@ -314,23 +222,12 @@ def tile_extraction_part(args, tiff, model):
         for i in tqdm.tqdm(range(0, tiff.shape[0], args.rolling_window), desc="i"):
             if i + args.tile_size >= tiff.shape[0]:
                 break
-            tile = torchvision.transforms.functional.crop(tiff, i, tiff.shape[1] - args.tile_size, args.tile_size, args.tile_size)
-            tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
-            res = model([tile])[0]
-            res = filter_tile(args, res, TILE_AREA, i, tiff.shape[1] - args.tile_size)
 
-            save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
+            extract_tile_run_model_save(args, tiff, model, i, tiff.shape[1] - args.tile_size, counter )
             counter += 1
 
     if tiff.shape[0] % args.rolling_window != 0 and tiff.shape[1] % args.rolling_window != 0:
-        # bottom right square
-        tile = torchvision.transforms.functional.crop(tiff, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size, args.tile_size,
-                                                      args.tile_size)
-        tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
-        res = model([tile])[0]
-        res = filter_tile(args, res, TILE_AREA, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size)
-
-        save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
+        extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size, counter)
         counter += 1
 
 
@@ -345,15 +242,11 @@ def plot_full(tiff, boxes, scores):
     plt.show()
 
 
-def parallel_mask_generator(tiff, box, queue):
-    cell = tiff[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
-    mask = calculate_mask_threshold(cell)
-    return (box, mask)
+def load_tiff(path):
+    output = tifffile.imread(path)
 
-def create_mask_from_tile(cell, threshold, multiplier=None):
-    output = numpy.copy(cell)
-    output[cell >= threshold] = 1 if multiplier is None else multiplier
-    output[cell < threshold] = 0
+    if output.ndim >= 3 and output.shape[0] > 1:
+        output = output[0]
 
     return output
 
@@ -368,10 +261,11 @@ def pipeline(args):
             print("Invalid gpu id. Detected {} but id {} was selected.".format(torch.cuda.device_count(), int(args.device.split(":")[-1])))
             sys.exit(1)
 
-    tiff = tifffile.imread(args.input)
-    # grab first channel if multiple channels available
-    if tiff.ndim == 3 and tiff.shape[0] > 1:  # TODO this assumes first channel is DAPI, pass as parameter?
-        tiff = tiff[0]
+    tiff = load_tiff(args.input)
+
+    tiff = normalize_8_bit(tiff) * 255.0
+    tiff = torch.FloatTensor(tiff.astype(numpy.float16))
+
     original_shape = tiff.shape
 
     if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
@@ -389,18 +283,12 @@ def pipeline(args):
         # store after binary mask threshold
         # next tile...
 
-        tiff = normalize_8_bit(tiff) * 255.0
-        tiff = torch.FloatTensor(tiff.astype(numpy.float16))
-
-        if args.parallel:
-            torch.multiprocessing.set_start_method("spawn", force=True)
-            tile_extraction_part_mt(args, tiff, model)
-        else:
-            tile_extraction_part(args, tiff, model)
+        tile_extraction_part(args, tiff, model)
 
         # free some memory
         del model
-    #del tiff
+
+    del tiff
 
     output = load_all_steps(os.path.join(args.output, "step1"))
     del output["masks"]
@@ -410,61 +298,14 @@ def pipeline(args):
     output["boxes"] = output["boxes"][indexes].type(torch.int)
     output["scores"] = output["scores"][indexes]
 
-    #plot_full(tiff, output["boxes"], output["scores"])
+    tiff = load_tiff(args.input)
+    tiff = torch.FloatTensor([tiff])[0]
 
-    final = numpy.zeros(original_shape)
-    print(final.shape)
+    mg = MaskGenerator.MaskGenerator(component_index=2)
+    final = mg.generate_mask_output(tiff, output["boxes"])
 
-    print("Thresholding")
-    tiff = torch.FloatTensor([tiff])
-    supertile = torch.cat([
-        torchvision.transforms.functional.crop(
-            tiff,
-            x[1],
-            x[0],
-            x[3] - x[1],
-            x[2] - x[0]
-        ).flatten() for x in output["boxes"]
-    ])
-    threshold = calculate_mask_threshold_mix(supertile)
-
-    del supertile
-
-    print("Creating masks")
-    for i, box in enumerate(output["boxes"]):
-        final[box[1]:box[3], box[0]:box[2]] += create_mask_from_tile(
-            torchvision.transforms.functional.crop(
-                tiff,
-                box[1],
-                box[0],
-                box[3] - box[1],
-                box[2] - box[0]
-            )[0],
-            threshold,
-            i+1)
-
-    """
-    with multiprocessing.Pool(None) as p:
-        data = p.map(create_mask_from_tile, (cells, itertools.repeat(threshold)))
-
-    
-    for i in range(len(output["boxes"])):
-        box = output["boxes"][i].type(torch.int)
-        print(box)
-        mask = calculate_mask_threshold(
-                tiff[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
-        )
-        #mask = mask.reshape((args.tile_size, args.tile_size))
-        mask = mask * (i + 1)
-        if box[3] - box[1] != mask.shape[0] or box[2] - box[0] != mask.shape[1]:  # TODO wtf is this case?
-            #print(box, mask.shape)
-            mask = mask[0:min(mask.shape[0], box[3] - box[1]), 0:min(mask.shape[1], box[2] - box[0])]
-            final[box[1]:box[1]+mask.shape[0], box[0]:box[0]+mask.shape[1]] += mask
-        else:
-            # TODO make changes that adapt to overlapping boxes and masks, XOR?
-            final[box[1]:box[3], box[0]:box[2]] += mask
-    """
     del tiff
+
     if not args.no_viewer:
         viewer = napari.Viewer()
         original = tifffile.imread(args.input)
@@ -515,10 +356,6 @@ if __name__ == "__main__":
 
     if not os.path.isfile(args.model_path):
         print("Model file not found {}.".format(args.model_path))
-        sys.exit(1)
-
-    if args.parallel:
-        print("Parallel implementation not ready yet... sorry :(")
         sys.exit(1)
 
     if not os.path.exists(args.output):
