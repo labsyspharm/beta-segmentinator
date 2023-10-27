@@ -111,16 +111,17 @@ def filter_tile(args, res, tile_area, i, j):
     n_masks = list()
 
     for k in range(len(res["masks"])):
-        """"
         res["masks"][k] = (res["masks"][k] >= args.thres_mask).astype(int)
 
+
         # trim mask to bounded box
-        n_masks.append( ((j,i), res["masks"][k][
+        n_masks.append(res["masks"][k][
                                 0,
                                 int(res["boxes"][k][1]):int(res["boxes"][k][3]),
                                 int(res["boxes"][k][0]):int(res["boxes"][k][2])
-                                ]
-                         ))
+                                ])
+
+        """
         #n_masks.append( ( (j, i), res["masks"][k]) )
         """
         # update boxes coordinates from tile coord to image coord
@@ -291,18 +292,20 @@ def pipeline(args):
     del tiff
 
     output = load_all_steps(os.path.join(args.output, "step1"))
-    del output["masks"]
+    #del output["masks"]
 
     indexes = torchvision.ops.nms(output["boxes"], output["scores"], args.thres_nms).numpy()
 
     output["boxes"] = output["boxes"][indexes].type(torch.int)
     output["scores"] = output["scores"][indexes]
 
+    output["masks"] = [output["masks"][i] for i in indexes]
+
     tiff = load_tiff(args.input)
     tiff = torch.FloatTensor([tiff])[0]
 
-    mg = MaskGenerator.MaskGenerator(component_index=2)
-    final = mg.generate_mask_output(tiff, output["boxes"])
+    mg = MaskGenerator.MaskGenerator(component_index=2, mask_strategy="xor")
+    final = mg.generate_mask_output(tiff, output["boxes"], output["masks"])
 
     del tiff
 
