@@ -49,6 +49,9 @@ def normalize_8_bit(image):
         raise Exception("Invalid dtype {}".format(image.dtype))
 
 
+def filter_tile2(args, res, tile_area, i, j):
+    pass
+
 def filter_tile(args, res, tile_area, i, j):
     for key in res:
         res[key] = res[key].detach().cpu()
@@ -111,7 +114,7 @@ def filter_tile(args, res, tile_area, i, j):
     n_masks = list()
 
     for k in range(len(res["masks"])):
-        res["masks"][k] = (res["masks"][k] >= args.thres_mask).astype(int)
+        #res["masks"][k] = (res["masks"][k] >= args.thres_mask).astype(int)
 
 
         # trim mask to bounded box
@@ -267,6 +270,25 @@ def pipeline(args):
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
+    """
+    filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
+
+    filterPredicates.add_filter(
+        filters.CellSizePredicate.CellSizePredicate(max_threshold=1, min_threshold=1)
+    )
+    filterPredicates.add_filter(
+        filters.EdgeCellPredicate.EdgeCellPredicate(coord_start=3, coord_end=args.tile_size - 3)
+    )
+    filterPredicates.add_filter(
+        filters.MaskQuantityPredicate.MaskQuantityPredicate(min_quantity=15)
+    )
+    filterPredicates.add_filter(
+        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.66)
+    )
+    filterPredicates.add_filter(
+        filters.ScoreThresholdPredicate.ScoreThresholdPredicate()
+    )
+    """
     original_shape = tiff.shape
 
     if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
@@ -335,7 +357,9 @@ def pipeline(args):
             face_color="transparent"
         )
         mask = viewer.add_labels(
-            final.astype(int), name="Masks"
+            final.astype(int),
+            name="Masks",
+            opacity=0.4
         )
 
         viewer.show(block=True)

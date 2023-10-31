@@ -3,7 +3,7 @@ import scipy.ndimage
 import torch
 import torchvision.transforms.functional
 import sklearn.mixture
-
+import skimage
 
 class MaskGenerator:
     def __init__(self, component_index=2, mask_strategy="addition"):
@@ -14,6 +14,13 @@ class MaskGenerator:
         """
         self.component_index = component_index
         self.mask_strategy = mask_strategy
+        self.random = numpy.random
+
+    def select_random(self, x, y):
+        i = 0
+        if x.shape[0] != 0:
+            i = self.random.randint(0, x.shape[0])
+        return x[i], y[i]
 
     def _calculate_threshold_gmm(self, tile: torch.tensor) -> float:
         gmm = sklearn.mixture.GaussianMixture(n_components=3)
@@ -52,7 +59,11 @@ class MaskGenerator:
         output[cell < threshold] = 0
 
         if mask is not None and output.shape == mask.shape:
-            output = torch.logical_and(output, torch.IntTensor(mask))
+            x, y = (mask == numpy.max(mask)).nonzero()
+            x, y = self.select_random(x, y)
+            output = skimage.segmentation.flood(output, (x, y))
+            output = numpy.logical_and(output, mask)
+
 
         output = scipy.ndimage.binary_fill_holes(output).astype(int)
 
