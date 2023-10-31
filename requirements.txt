@@ -5,3 +5,5 @@ napari
 tifffile
 numpy
 tqdm
+scikit-image
+scipy
