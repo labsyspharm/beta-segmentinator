@@ -234,7 +234,7 @@ class MaskGenerator:
                     m1 = output[box[1]:box[3], box[0]:box[2]] * temp
                     m1 += (numpy.logical_xor(m1, m) * (i + 1))
                     output[box[1]:box[3], box[0]:box[2]] = m1
-                elif self.mask_strategy == "ignore":
+                elif self.mask_strategy == "ignore":  # ignores intersection of boxes to prevent bleedthough of masks
                     m = m - output[box[1]:box[3], box[0]:box[2]]
                     m[m <= 0] = 0
                     m *= (i + 1)
