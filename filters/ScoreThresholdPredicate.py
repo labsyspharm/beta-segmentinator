@@ -8,5 +8,11 @@ class ScoreThresholdPredicate(filters.FilterPredicates.Predicate):
         self.threshold = threshold
 
     def apply(self, x: dict[str, torch.tensor]):
-        return (x["scores"] > self.threshold).numpy()
+        output = list()
+
+        for s in x["scores"]:
+            output.append(s[0] > self.threshold)
+
+        return output
+        #return [s > self.threshold for s in x["scores"]]
 

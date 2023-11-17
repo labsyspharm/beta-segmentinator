@@ -14,7 +14,15 @@ import torchvision.ops
 import numpy
 import tqdm
 
+import GetStatistics
 import MaskGenerator
+import ZarrStorageHandler
+import filters.FilterPredicates
+import filters.CellSizePredicate
+import filters.MaskQuantityPredicate
+import filters.EdgeCellPredicate
+import filters.ScoreThresholdPredicate
+import filters.MaskQualityPredicate
 
 
 def parse_args():
@@ -32,6 +40,7 @@ def parse_args():
     output.add_argument("--rolling-window", type=int, help="How many pixels to move for each rolling window step.", default=10)
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
     output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
+    output.add_argument("--dapi-channel", type=int, help="Which channel in the input file is DAPI.", default=0)
 
     return output.parse_args(sys.argv[1:])
 
@@ -51,6 +60,25 @@ def normalize_8_bit(image):
 
 def filter_tile2(args, res, tile_area, i, j):
     pass
+
+
+def correct_coords_trim_masks(args, res, i, j):
+    n_masks = list()
+    for k in range(len(res["boxes"])):
+        # trim mask to bounded box
+        n_masks.append(res["masks"][k][
+                       0,
+                       int(res["boxes"][k][1]):int(res["boxes"][k][3]),
+                       int(res["boxes"][k][0]):int(res["boxes"][k][2])
+                       ])
+        # update boxes coordinates from tile coord to image coord
+        res["boxes"][k][0] += j
+        res["boxes"][k][1] += i
+        res["boxes"][k][2] += j
+        res["boxes"][k][3] += i
+
+    res["masks"] = n_masks
+
 
 def filter_tile(args, res, tile_area, i, j):
     for key in res:
@@ -93,8 +121,10 @@ def filter_tile(args, res, tile_area, i, j):
 
     if len(res["boxes"]) == 0:
         return res
+
     # keep only decently sized cells
     index = [(b[2] - b[0]) * (b[3] - b[1]) > 30 for b in res["boxes"]]
+
     res["scores"] = res["scores"][index]
     res["masks"] = res["masks"][index]
     res["boxes"] = res["boxes"][index]
@@ -184,6 +214,17 @@ def load_all_steps(path):
     return output
 
 
+def extract_tile_run_model_zarr(args, tiff, model, coordX, coordY, counter):
+    tile = torchvision.transforms.functional.crop(tiff, coordX, coordY, args.tile_size, args.tile_size)
+    tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
+
+    res = model([tile])[0]
+
+    correct_coords_trim_masks(args, res, coordX, coordY)
+
+    return res
+
+
 def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter):
     tile = torchvision.transforms.functional.crop(tiff, coordX, coordY, args.tile_size, args.tile_size)
     tile = torch.FloatTensor(tile).reshape((1, args.tile_size, args.tile_size)).cuda()
@@ -196,10 +237,23 @@ def extract_tile_run_model_save(args, tiff, model, coordX, coordY, counter):
         save_intermediate_step(res, os.path.join(args.output, "step1", str(counter) + ".pkl"))
 
 
+def merge_predictions(args, base, new):
+    for key in new.keys():
+        if isinstance(new[key], list):
+            base[key].extend([x.detach().cpu() for x in new[key]])
+        else:
+            base[key].extend(new[key].detach().cpu())
+
+
 def tile_extraction_part(args, tiff, model):
     TILE_AREA = args.tile_size ** 2
     counter = 0
 
+    data = dict()
+    data["boxes"] = list()
+    data["masks"] = list()
+    data["scores"] = list()
+    data["labels"] = list()
 
     for i in tqdm.tqdm(range(0, tiff.shape[0], args.rolling_window), desc="out"):
         if i + args.tile_size > tiff.shape[0]:
@@ -209,7 +263,9 @@ def tile_extraction_part(args, tiff, model):
             if j + args.tile_size > tiff.shape[1]:
                 break
 
-            extract_tile_run_model_save(args, tiff, model, i, j, counter)
+            #extract_tile_run_model_save(args, tiff, model, i, j, counter)
+            res = extract_tile_run_model_zarr(args, tiff, model, i, j, counter)
+            merge_predictions(args, data, res)
             counter += 1
 
     if tiff.shape[0] % args.rolling_window != 0:
@@ -218,7 +274,9 @@ def tile_extraction_part(args, tiff, model):
             if j + args.tile_size >= tiff.shape[1]:
                 break
 
-            extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, j, counter)
+            #extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, j, counter)
+            res = extract_tile_run_model_zarr(args, tiff, model, tiff.shape[0] - args.tile_size, j, counter)
+            merge_predictions(args, data, res)
             counter += 1
 
     if tiff.shape[1] % args.rolling_window != 0:
@@ -227,13 +285,20 @@ def tile_extraction_part(args, tiff, model):
             if i + args.tile_size >= tiff.shape[0]:
                 break
 
-            extract_tile_run_model_save(args, tiff, model, i, tiff.shape[1] - args.tile_size, counter )
+            #extract_tile_run_model_save(args, tiff, model, i, tiff.shape[1] - args.tile_size, counter )
+            res = extract_tile_run_model_zarr(args, tiff, model, i, tiff.shape[1] - args.tile_size, counter )
+            merge_predictions(args, data, res)
             counter += 1
 
     if tiff.shape[0] % args.rolling_window != 0 and tiff.shape[1] % args.rolling_window != 0:
-        extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size, counter)
+        #extract_tile_run_model_save(args, tiff, model, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size, counter)
+        res = extract_tile_run_model_zarr(args, tiff, model, tiff.shape[0] - args.tile_size, tiff.shape[1] - args.tile_size, counter)
+        merge_predictions(args, data, res)
         counter += 1
 
+    data["boxes"] = numpy.vstack(data["boxes"])
+
+    return data
 
 def plot_full(tiff, boxes, scores):
     plt.imshow(tiff)
@@ -246,13 +311,19 @@ def plot_full(tiff, boxes, scores):
     plt.show()
 
 
-def load_tiff(path):
-    output = tifffile.imread(path)
+def load_tiff(path, channel=None):
+    output = None
+
+    if channel is None:
+        output = tifffile.imread(path)
+    else:
+        output = tifffile.imread(path, key=channel)
 
     if output.ndim >= 3 and output.shape[0] > 1:
         output = output[0]
 
     return output
+
 
 def pipeline(args):
     device = "cpu"
@@ -265,35 +336,35 @@ def pipeline(args):
             print("Invalid gpu id. Detected {} but id {} was selected.".format(torch.cuda.device_count(), int(args.device.split(":")[-1])))
             sys.exit(1)
 
-    tiff = load_tiff(args.input)
+    tiff = load_tiff(args.input, args.dapi_channel)
 
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
-    """
     filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
 
     filterPredicates.add_filter(
-        filters.CellSizePredicate.CellSizePredicate(max_threshold=1, min_threshold=1)
+        filters.CellSizePredicate.CellSizePredicate(max_threshold=1508, min_threshold=10)
     )
     filterPredicates.add_filter(
-        filters.EdgeCellPredicate.EdgeCellPredicate(coord_start=3, coord_end=args.tile_size - 3)
-    )
-    filterPredicates.add_filter(
-        filters.MaskQuantityPredicate.MaskQuantityPredicate(min_quantity=15)
-    )
-    filterPredicates.add_filter(
-        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.66)
-    )
-    filterPredicates.add_filter(
-        filters.ScoreThresholdPredicate.ScoreThresholdPredicate()
+        filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
     )
     """
+    filterPredicates.add_filter(
+        filters.MaskQuantityPredicate.MaskQuantityPredicate(min_quantity=1)
+    )
+    """
+    filterPredicates.add_filter(
+        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
+    )
+
+    filterPredicates.add_filter(
+        filters.ScoreThresholdPredicate.ScoreThresholdPredicate(.6)
+    )
     original_shape = tiff.shape
 
     if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
         print("No previous run found")
-        os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
 
         model = torch.load(args.model_path, map_location=torch.device(device))
         model.eval()
@@ -306,28 +377,55 @@ def pipeline(args):
         # store after binary mask threshold
         # next tile...
 
-        tile_extraction_part(args, tiff, model)
+        data = tile_extraction_part(args, tiff, model)
+
+        os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
+        ZarrStorageHandler.SegmentinatorDatasetWrapper.save_all(os.path.join(args.output, "step1"), data["boxes"], data["scores"], data["masks"])
 
         # free some memory
         del model
 
-    del tiff
 
-    output = load_all_steps(os.path.join(args.output, "step1"))
+    #output = load_all_steps(os.path.join(args.output, "step1"))
     #del output["masks"]
 
-    indexes = torchvision.ops.nms(output["boxes"], output["scores"], args.thres_nms).numpy()
+    output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
 
-    output["boxes"] = output["boxes"][indexes].type(torch.int)
-    output["scores"] = output["scores"][indexes]
+    print("Loaded")
 
-    output["masks"] = [output["masks"][i] for i in indexes]
+    GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
+    plt.show()
+    del tiff
 
-    tiff = load_tiff(args.input)
+    index = filterPredicates.apply(output)
+
+    b = output["boxes"][index]
+    s = output["scores"][index]
+    m = output["masks"][index]
+
+    b = torch.tensor(b.astype(numpy.float32))
+    s = torch.tensor(s.reshape((-1)).astype(numpy.float32))
+
+    indexes = torchvision.ops.nms(b, s, args.thres_nms).numpy()
+
+    b = b.type(torch.int32)
+
+    b = b[indexes]
+    s = s[indexes]
+    m = m[indexes]
+
+    tiff = load_tiff(args.input, args.dapi_channel)
     tiff = torch.FloatTensor([tiff])[0]
 
-    mg = MaskGenerator.MaskGenerator(component_index=2, mask_strategy="xor")
-    final = mg.generate_mask_output(tiff, output["boxes"], output["masks"])
+    mg = MaskGenerator.MaskGenerator(component_index=2, mask_strategy="ignore", gmm_strategy="individual")
+    final = mg.generate_mask_output(tiff, b, m)
+
+    original_mask = numpy.zeros_like(final)
+
+    for i, box in enumerate(b):
+        if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+            continue
+        original_mask[box[1]:box[3], box[0]:box[2]] += m[i]
 
     del tiff
 
@@ -344,12 +442,12 @@ def pipeline(args):
                 [
                     [box[1].item(), box[0].item()],
                     [box[3].item(), box[2].item()]
-                ] for box in output["boxes"]
+                ] for box in b
             ],
             edge_width=1,
             edge_color="coral",
             text={"string": "{scores:.4f}", "anchor":"center", "color":"red", "size":6},
-            features={"scores":[x.item() for x in output["scores"]]},
+            features={"scores":[x.item() for x in s]},
             blending="translucent",
             name="Bounding Boxes",
             opacity=1.0,
@@ -359,6 +457,12 @@ def pipeline(args):
         mask = viewer.add_labels(
             final.astype(int),
             name="Masks",
+            opacity=0.4
+        )
+
+        viewer.add_image(
+            original_mask,
+            name="Original Masks",
             opacity=0.4
         )
 
