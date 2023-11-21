@@ -41,6 +41,7 @@ def parse_args():
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
     output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
     output.add_argument("--dapi-channel", type=int, help="Which channel in the input file is DAPI.", default=0)
+    output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)
 
     return output.parse_args(sys.argv[1:])
 
@@ -349,11 +350,7 @@ def pipeline(args):
     filterPredicates.add_filter(
         filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
     )
-    """
-    filterPredicates.add_filter(
-        filters.MaskQuantityPredicate.MaskQuantityPredicate(min_quantity=1)
-    )
-    """
+    
     filterPredicates.add_filter(
         filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
     )
@@ -394,6 +391,7 @@ def pipeline(args):
     print("Loaded")
 
     GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
+    plt.savefig(os.path.join(args.output, "stats.png"))
     plt.show()
     del tiff
 
@@ -417,8 +415,12 @@ def pipeline(args):
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = torch.FloatTensor([tiff])[0]
 
-    mg = MaskGenerator.MaskGenerator(component_index=2, mask_strategy="ignore", gmm_strategy="individual")
-    final = mg.generate_mask_output(tiff, b, m)
+    mg = MaskGenerator.MaskGenerator(component_index=2,
+                                     mask_strategy="ignore",
+                                     gmm_strategy="individual",
+                                     dilation=args.dilation_pixels)
+
+    final, final_dilated = mg.generate_mask_output(tiff, b, m)
 
     original_mask = numpy.zeros_like(final)
 
@@ -446,8 +448,8 @@ def pipeline(args):
             ],
             edge_width=1,
             edge_color="coral",
-            text={"string": "{scores:.4f}", "anchor":"center", "color":"red", "size":6},
-            features={"scores":[x.item() for x in s]},
+            text={"string": "{scores:.4f}", "anchor": "center", "color": "red", "size": 6},
+            features={"scores": [x.item() for x in s]},
             blending="translucent",
             name="Bounding Boxes",
             opacity=1.0,
@@ -466,9 +468,18 @@ def pipeline(args):
             opacity=0.4
         )
 
+        if final_dilated is not None:
+            viewer.add_labels(
+                final_dilated.astype(int),
+                name="Masks dilated",
+                opacity=0.4
+            )
+
         viewer.show(block=True)
 
     tifffile.imwrite(os.path.join(args.output, "output.tiff"), final)
+    if final_dilated is not None:
+        tifffile.imwrite(os.path.join(args.output, "output_dilatef.tiff"), final_dilated)
 
     print("Done :)")
 
