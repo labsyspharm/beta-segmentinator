@@ -10,7 +10,7 @@ class MaskQuantityPredicate(filters.FilterPredicates.Predicate):
         self.threshold = min_quantity
 
     def apply(self, x: dict[str, torch.tensor]):
-        return [b[1].sum() > self.threshold for b in x["masks"]]
+        return [(b != 0).sum() > self.threshold for b in x["masks"]]
 
 
 class MaskQuantityPercentagePredicate(filters.FilterPredicates.Predicate):
@@ -21,4 +21,4 @@ class MaskQuantityPercentagePredicate(filters.FilterPredicates.Predicate):
         self.threshold = min_percentage
 
     def apply(self, x: dict[str, torch.tensor]):
-        return [b[1].sum() / (b[1].shape[0] * b[1].shape[1]) > self.threshold for b in x["masks"]]
+        return [(b != 0).sum() / ((b.shape[0] + 1) * (b.shape[1] + 1)) > self.threshold for b in x["masks"]]

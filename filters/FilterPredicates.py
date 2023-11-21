@@ -27,7 +27,7 @@ class FilterPredicateHandler:
 
         self.filters.append(filter)
 
-    def apply(self, x: dict[str, torch.tensor]) -> numpy.array[bool]:
+    def apply(self, x: dict[str, torch.tensor]) -> numpy.ndarray[bool]:
         res = [f.apply(x) for f in self.filters]
 
         return numpy.logical_and.reduce(res)

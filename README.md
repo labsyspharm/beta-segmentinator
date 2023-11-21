@@ -1,7 +1,9 @@
 # UnMicst Segmentation step (Segmentinator... inator)
 This repo contains the segmentation step for debugging purposes using Mask-RCNN models.
 
-![segmentinator logo](https://github.com/labsyspharm/beta-segmentinator/blob/master/image.png?raw=true)
+<p align="center">
+<img src="https://github.com/labsyspharm/beta-segmentinator/blob/master/image.png?raw=true" />
+</p>
 
 ## How to run
 1. Install required packages ```pip install requirements.txt``` (advisable to use a virtual environment)
