@@ -350,7 +350,7 @@ def pipeline(args):
     filterPredicates.add_filter(
         filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
     )
-    
+
     filterPredicates.add_filter(
         filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
     )
@@ -391,8 +391,8 @@ def pipeline(args):
     print("Loaded")
 
     GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
-    plt.savefig(os.path.join(args.output, "stats.png"))
-    plt.show()
+    plt.savefig(os.path.join(args.output, "stats.png"), dpi=200)
+    #plt.show()
     del tiff
 
     index = filterPredicates.apply(output)
@@ -406,6 +406,10 @@ def pipeline(args):
 
     indexes = torchvision.ops.nms(b, s, args.thres_nms).numpy()
 
+    print("From original {} cells, after filtering we are left with {}, after NMS we are left with {}.".format(
+        len(output), index.sum(), len(indexes)
+    ))
+
     b = b.type(torch.int32)
 
     b = b[indexes]
@@ -413,7 +417,7 @@ def pipeline(args):
     m = m[indexes]
 
     tiff = load_tiff(args.input, args.dapi_channel)
-    tiff = torch.FloatTensor([tiff])[0]
+    tiff = torch.FloatTensor(tiff.astype(numpy.int32))
 
     mg = MaskGenerator.MaskGenerator(component_index=2,
                                      mask_strategy="ignore",
@@ -422,16 +426,15 @@ def pipeline(args):
 
     final, final_dilated = mg.generate_mask_output(tiff, b, m)
 
-    original_mask = numpy.zeros_like(final)
-
-    for i, box in enumerate(b):
-        if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
-            continue
-        original_mask[box[1]:box[3], box[0]:box[2]] += m[i]
-
     del tiff
 
     if not args.no_viewer:
+        original_mask = numpy.zeros_like(final)
+
+        for i, box in enumerate(b):
+            if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+                continue
+            original_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).astype(int)
         viewer = napari.Viewer()
         original = tifffile.imread(args.input)
 
@@ -479,7 +482,7 @@ def pipeline(args):
 
     tifffile.imwrite(os.path.join(args.output, "output.tiff"), final)
     if final_dilated is not None:
-        tifffile.imwrite(os.path.join(args.output, "output_dilatef.tiff"), final_dilated)
+        tifffile.imwrite(os.path.join(args.output, "output_dilated.tiff"), final_dilated)
 
     print("Done :)")
 

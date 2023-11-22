@@ -189,7 +189,14 @@ class MaskGenerator:
     @staticmethod
     def _internal_ignore(final, box, mask):
         m = mask - final[box[1]:box[3], box[0]:box[2]]
-        m[m <= 0] = 0
+        m[m < 0] = 0
+
+        return m
+
+    @staticmethod
+    def _internal_ignore_for_dilation(final, box, mask):
+        m = mask - final[box[1]:box[3], box[0]:box[2]]
+        m[m < 0] = -1
 
         return m
 
@@ -301,13 +308,21 @@ class MaskGenerator:
                         output_dilated[box[1]:box[3], box[0]:box[2]] = self._internal_new_xor(output_dilated, box,
                                                                                               m_dilated, i)
                 elif self.mask_strategy == "ignore":  # ignores intersection of boxes to prevent bleedthough of masks
-                    output[box[1]:box[3], box[0]:box[2]] = self._internal_ignore(output, box, m) * (i + 1)
+                    m = self._internal_ignore(output, box, m)
+                    output[box[1]:box[3], box[0]:box[2]] = m * (i + 1)
 
                     if m_dilated is not None:
                         n_box = [box[0] - dilation_extra, box[1] - dilation_extra, box[2] + dilation_extra,
                                  box[3] + dilation_extra]
-                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = self._internal_new_xor(output_dilated,
-                                                                                                      n_box,
-                                                                                                      m_dilated, i)
+                        m_dilated = self._internal_ignore(output_dilated, n_box, m_dilated)
+                        #m_dilated[dilation_extra:-dilation_extra, dilation_extra:-dilation_extra] = numpy.logical_or(
+                        #    m_dilated[dilation_extra:-dilation_extra, dilation_extra:-dilation_extra],
+                        #    m)
+
+                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = m_dilated * (i + 1)
+
+        if self.dilation is not None and self.dilation != 0:
+            l = output_dilated == -1
+            output_dilated[l] = output[l]
 
         return output, output_dilated
