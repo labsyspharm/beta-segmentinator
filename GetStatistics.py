@@ -45,18 +45,20 @@ def get_histogram_of_box_size(boxes):
 
 
 def do_plots(boxes, masks, scores, img=None):
-    f, ax = plt.subplots(nrows=2, ncols=3)
+    f, ax = plt.subplots(nrows=2, ncols=3, figsize=(32, 18))
     ax = ax.flatten()
 
     x = numpy.array(get_histogram_of_mask_percentage(boxes, masks))
     mean = x.mean()
     std = x.mean() - 2*x.std()
+    std2 = x.mean() + 2*x.std()
     ax[0].hist(x, bins=20)
     ax[0].axvline(ymin=0, ymax=1, x=mean, label="mean: {0:.3f}".format(mean), color="green")
     ax[0].axvline(ymin=0, ymax=1, x=std, label="mean - 2 * std: {0:.3f}".format(std), color="red")
+    ax[0].axvline(ymin=0, ymax=1, x=std2, label="mean + 2 * std: {0:.3f}".format(std2), color="red")
     ax[0].set_title("% box as masks.")
     ax[0].legend()
-    print("Mask % mean: {} - 2*std: {}".format(mean, std))
+    print("Box % as mask - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
 
     x = numpy.array(get_histogram_of_box_size(boxes))
     mean = x.mean()
