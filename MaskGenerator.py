@@ -196,6 +196,7 @@ class MaskGenerator:
     @staticmethod
     def _internal_ignore_for_dilation(final, box, mask):
         m = mask - final[box[1]:box[3], box[0]:box[2]]
+        m[final[box[1]:box[3], box[0]:box[2]] == -1] = -1
         m[m < 0] = -1
 
         return m
@@ -264,9 +265,10 @@ class MaskGenerator:
                     output[box[1]:box[3], box[0]:box[2]] = self._internal_ignore(output, box, m) * (i + 1)
 
                     if m_dilated is not None:
-                        n_box = [box[0] - dilation_extra, box[1] - dilation_extra, box[2] + dilation_extra, box[3] + dilation_extra]
-                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = self._internal_new_xor(output_dilated, n_box,
-                                                                                             m_dilated, i)
+                        n_box = [box[0] - dilation_extra, box[1] - dilation_extra, box[2] + dilation_extra,
+                                 box[3] + dilation_extra]
+                        m_dilated = self._internal_ignore_for_dilation(output_dilated, n_box, m_dilated)
+                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = m_dilated * (i + 1)
         else:
             for i, box in tqdm.tqdm(enumerate(boxes), desc="Creating masks and thresholds", total=boxes.shape[0]):
                 m = self._generate_mask_from_scratch(
@@ -314,12 +316,9 @@ class MaskGenerator:
                     if m_dilated is not None:
                         n_box = [box[0] - dilation_extra, box[1] - dilation_extra, box[2] + dilation_extra,
                                  box[3] + dilation_extra]
-                        m_dilated = self._internal_ignore(output_dilated, n_box, m_dilated)
-                        #m_dilated[dilation_extra:-dilation_extra, dilation_extra:-dilation_extra] = numpy.logical_or(
-                        #    m_dilated[dilation_extra:-dilation_extra, dilation_extra:-dilation_extra],
-                        #    m)
-
-                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = m_dilated * (i + 1)
+                        m_dilated = self._internal_ignore_for_dilation(output_dilated, n_box, m_dilated)
+                        m_dilated[m_dilated == 1] *= (i + 1)
+                        output_dilated[n_box[1]:n_box[3], n_box[0]:n_box[2]] = m_dilated
 
         if self.dilation is not None and self.dilation != 0:
             l = output_dilated == -1
