@@ -47,6 +47,7 @@ def get_histogram_of_box_size(boxes):
 def do_plots(boxes, masks, scores, img=None):
     f, ax = plt.subplots(nrows=2, ncols=3, figsize=(32, 18))
     ax = ax.flatten()
+    output = dict()
 
     x = numpy.array(get_histogram_of_mask_percentage(boxes, masks))
     mean = x.mean()
@@ -58,6 +59,9 @@ def do_plots(boxes, masks, scores, img=None):
     ax[0].axvline(ymin=0, ymax=1, x=std2, label="mean + 2 * std: {0:.3f}".format(std2), color="red")
     ax[0].set_title("% box as masks.")
     ax[0].legend()
+    output["box_perc_mean"] = mean
+    output["box_perc_std_down"] = std
+    output["box_perc_std_up"] = std2
     print("Box % as mask - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
 
     x = numpy.array(get_histogram_of_box_size(boxes))
@@ -69,6 +73,8 @@ def do_plots(boxes, masks, scores, img=None):
     ax[1].axvline(ymin=0, ymax=1, x=std, label="mean + 2 * std: {0:.3f}".format(std), color="red")
     ax[1].set_title("Box size in pixels")
     ax[1].legend()
+    output["box_size_mean"] = mean
+    output["box_size_std"] = std
     print("Box size mean: {} - 2*std: {}".format(mean, std))
 
     x = numpy.array(scores)
@@ -80,6 +86,8 @@ def do_plots(boxes, masks, scores, img=None):
     ax[2].axvline(ymin=0, ymax=1, x=std, label="mean - 2 * std: {0:.3f}".format(std), color="red")
     ax[2].set_title("Scores")
     ax[2].legend()
+    output["scores_mean"] = mean
+    output["scores_std_down"] = std
     print("Prediction score mean: {} - 2*std: {}".format(mean, std))
 
     if img is not None:
@@ -105,7 +113,12 @@ def do_plots(boxes, masks, scores, img=None):
         ax[3].axvline(ymin=0, ymax=1, x=std, label="mean + 2 * std: {0:.3f}".format(std), color="red")
         ax[3].axvline(ymin=0, ymax=1, x=std2, label="mean - 2 * std: {0:.3f}".format(std2), color="red")
         ax[3].legend()
+        output["pixel_intensity_mean"] = mean
+        output["pixel_intensity_std_down"] = std
+        output["pixel_intensity_std_up"] = std2
         print("Sum of pixel intensity per prediction - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
+
+    return output
 
 
 

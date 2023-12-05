@@ -342,22 +342,6 @@ def pipeline(args):
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
-    filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
-
-    filterPredicates.add_filter(
-        filters.CellSizePredicate.CellSizePredicate(max_threshold=1508, min_threshold=10)
-    )
-    filterPredicates.add_filter(
-        filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
-    )
-
-    filterPredicates.add_filter(
-        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
-    )
-
-    filterPredicates.add_filter(
-        filters.ScoreThresholdPredicate.ScoreThresholdPredicate(.6)
-    )
     original_shape = tiff.shape
 
     if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
@@ -377,7 +361,12 @@ def pipeline(args):
         data = tile_extraction_part(args, tiff, model)
 
         os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
-        ZarrStorageHandler.SegmentinatorDatasetWrapper.save_all(os.path.join(args.output, "step1"), data["boxes"], data["scores"], data["masks"])
+        ZarrStorageHandler.SegmentinatorDatasetWrapper.save_all(
+            os.path.join(args.output, "step1"),
+            data["boxes"],
+            data["scores"],
+            data["masks"]
+        )
 
         # free some memory
         del model
@@ -390,9 +379,27 @@ def pipeline(args):
 
     print("Loaded")
 
-    GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
+    stats = GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
     plt.savefig(os.path.join(args.output, "stats.png"), dpi=200)
-    #plt.show()
+
+    filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
+
+    filterPredicates.add_filter(
+        filters.CellSizePredicate.CellSizePredicate(max_threshold=1508, min_threshold=10)
+    )
+
+    filterPredicates.add_filter(
+        filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
+    )
+
+    filterPredicates.add_filter(
+        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
+    )
+
+    filterPredicates.add_filter(
+        filters.ScoreThresholdPredicate.ScoreThresholdPredicate(.6)
+    )
+
     del tiff
 
     index = filterPredicates.apply(output)
@@ -481,6 +488,7 @@ def pipeline(args):
         viewer.show(block=True)
 
     tifffile.imwrite(os.path.join(args.output, "output.tiff"), final)
+
     if final_dilated is not None:
         tifffile.imwrite(os.path.join(args.output, "output_dilated.tiff"), final_dilated)
 

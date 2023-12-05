@@ -1,5 +1,5 @@
 import math
-
+from typing import Tuple
 import numpy
 import scipy.ndimage
 import torch
@@ -202,7 +202,7 @@ class MaskGenerator:
         return m
 
     def generate_mask_output(self, tiff: torch.FloatTensor, boxes: torch.IntTensor | numpy.ndarray,
-                             masks: list = None) -> numpy.ndarray:
+                             masks: list = None) -> Tuple[numpy.ndarray, numpy.ndarray | None]:
         """
         Generates a \code{numpy.ndarray} with the same dimensions as \code{tiff} but with each cell detected by \code{boxes} masked by a GMM with 3 components.
         Each cell is assigned a unique sequential integer value.
