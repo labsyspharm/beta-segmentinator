@@ -41,7 +41,10 @@ def parse_args():
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
     output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
     output.add_argument("--dapi-channel", type=int, help="Which channel in the input file is DAPI.", default=0)
-    output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)
+    output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)    
+    output.add_argument("--dilation-pixels-microns", type=int, help="How many microns to dilate for cytoplasm inclusion. 0 or lower skips this step.", default=None)
+    output.add_argument("--microns-to-pixels", type=float, help="Coefficient to tranform microns to pixels for dilation, needed if specified dilation-pixels-microns.", default=None)
+
 
     return output.parse_args(sys.argv[1:])
 
@@ -426,10 +429,12 @@ def pipeline(args):
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = torch.FloatTensor(tiff.astype(numpy.int32))
 
+    dilation = args.dilation_pixels if args.dilation_pixels is not None else args.dilation_pixels_microns * args.microns_to_pixels
+
     mg = MaskGenerator.MaskGenerator(component_index=2,
                                      mask_strategy="ignore",
                                      gmm_strategy="individual",
-                                     dilation=args.dilation_pixels)
+                                     dilation=dilation)
 
     final, final_dilated = mg.generate_mask_output(tiff, b, m)
 
@@ -499,6 +504,15 @@ if __name__ == "__main__":
     args = parse_args()
     print(args)
 
+    if args.dilation_pixels_microns is not None:
+        if args.dilation_pixels is not None:
+            print("Cannot have dilation pixels and dilation pixes microns.")
+            sys.exit(1)
+
+        if args.microns_to_pixels is None:
+            print("Specified dilation in microns but not microns_to_pixels argument.")
+            sys.exit(1)
+    
     if torch.cuda.device_count() == 0 and args.device == "cuda":
         print("Pytorch cannot find GPU devices (and gpu device is selected).")
         sys.exit(1)
