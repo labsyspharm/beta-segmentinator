@@ -43,7 +43,8 @@ def parse_args():
     output.add_argument("--dapi-channel", type=int, help="Which channel in the input file is DAPI.", default=0)
     output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)    
     output.add_argument("--dilation-pixels-microns", type=int, help="How many microns to dilate for cytoplasm inclusion. 0 or lower skips this step.", default=None)
-    output.add_argument("--microns-to-pixels", type=float, help="Coefficient to tranform microns to pixels for dilation, needed if specified dilation-pixels-microns.", default=None)
+    output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)
+    output.add_argument("--no-intermediate", action="store_true", help="Do not store intermediate steps.") 
 
 
     return output.parse_args(sys.argv[1:])
@@ -364,12 +365,13 @@ def pipeline(args):
         data = tile_extraction_part(args, tiff, model)
 
         os.makedirs(os.path.join(args.output, "step1"), exist_ok=True)
-        ZarrStorageHandler.SegmentinatorDatasetWrapper.save_all(
-            os.path.join(args.output, "step1"),
-            data["boxes"],
-            data["scores"],
-            data["masks"]
-        )
+        if not args.no_intermediate:
+            ZarrStorageHandler.SegmentinatorDatasetWrapper.save_all(
+                os.path.join(args.output, "step1"),
+                data["boxes"],
+                data["scores"],
+                data["masks"]
+            )
 
         # free some memory
         del model
@@ -377,8 +379,12 @@ def pipeline(args):
 
     #output = load_all_steps(os.path.join(args.output, "step1"))
     #del output["masks"]
-
-    output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
+    output = None
+    
+    if args.no_intermediate:
+        output = data
+    else:
+        output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
 
     print("Loaded")
 

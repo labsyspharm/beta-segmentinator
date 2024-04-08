@@ -8,5 +8,5 @@ tqdm
 scikit-image
 scipy
 scikit-learn
-tqdm
 argparse
+zarr
