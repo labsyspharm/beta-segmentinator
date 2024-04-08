@@ -35,7 +35,7 @@ def parse_args():
     output.add_argument("--thres-mask", type=float, help="Mask threshold.", default=0.95)
     output.add_argument("--thres-size", type=float, help="% Size threshold for cells relative to tile size.", default=0.3)
     output.add_argument("--tile-size", type=int, help="Size of tiles to feed the segmentor model.", default=128)
-    output.add_argument("--model-path", type=str, help="Path to MaskRCNN segmentor.", default="/model.py")
+    output.add_argument("--model-path", type=str, help="Path to MaskRCNN segmentor.", default="~/model.pt")
     output.add_argument("--device", type=str, help="Device to run segmentation. eg \"cpu\" or \"cuda:N\" where N is gpu id.", default="cuda:0")
     output.add_argument("--rolling-window", type=int, help="How many pixels to move for each rolling window step.", default=10)
     output.add_argument("--no-viewer", action="store_true", help="Do not launch the Napari viewer to visualize output.")
