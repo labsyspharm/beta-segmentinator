@@ -62,7 +62,7 @@ def do_plots(boxes, masks, scores, img=None):
     output["box_perc_mean"] = mean
     output["box_perc_std_down"] = std
     output["box_perc_std_up"] = std2
-    print("Box % as mask - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
+    print("Box % as mask - Mean: {} - Low std: {} - Up std: {}".format(mean, std, std2))
 
     x = numpy.array(get_histogram_of_box_size(boxes))
     mean = x.mean()
@@ -119,7 +119,6 @@ def do_plots(boxes, masks, scores, img=None):
         print("Sum of pixel intensity per prediction - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
 
     return output
-
 
 
 def pipeline():
