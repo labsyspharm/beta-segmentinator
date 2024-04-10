@@ -42,7 +42,8 @@ def parse_args():
     output.add_argument("--no-output", action="store_true", help="Do not save the final tiff.")
     output.add_argument("--dapi-channel", type=int, help="Which channel in the input file is DAPI.", default=0)
     output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)
-    output.add_argument("--no-intermediate", action="store_true", help="Do not store intermediate steps.") 
+    output.add_argument("--no-intermediate", action="store_true", help="Do not store intermediate steps.")
+    output.add_argument("--dilation-pixels-microns", type=int, help="How many microns to dilate for cytoplasm inclusion. 0 or lower skips this step.", default=None)
 
     return output.parse_args(sys.argv[1:])
 
@@ -381,6 +382,7 @@ def pipeline(args):
     
     if args.no_intermediate:
         output = data
+
         output["boxes"] = output["boxes"].astype(int)
         output["scores"] = numpy.array([x.reshape((1)) for x in output["scores"]])
 
@@ -398,7 +400,6 @@ def pipeline(args):
             output["masks"][i] = m
 
         output["masks"] = numpy.array(output["masks"])
-
     else:
         output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
 
