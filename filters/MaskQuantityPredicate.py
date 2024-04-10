@@ -29,7 +29,7 @@ class MaskQuantityPercentagePredicate(filters.FilterPredicates.Predicate):
 
         for i in range(len(boxes)):
             temp = (masks[i] != 0).sum()
-            temp /= (boxes[i][2] - boxes[i][0] + 1) * (boxes[i][3] - boxes[i][1] + 1)
+            temp = temp / ( (boxes[i][2] - boxes[i][0] + 1) * (boxes[i][3] - boxes[i][1] + 1) )
 
             output.append(temp > self.threshold)
 
