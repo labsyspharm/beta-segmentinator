@@ -427,8 +427,7 @@ def pipeline(args):
 
     if args.thres_mask is None:
         filterPredicates.add_filter(
-            filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(stats["box_perc_std_up"],
-                                                                          min_percentage=max(0, stats["box_perc_std_down"]))
+            filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(min_percentage=max(0, stats["box_perc_std_down"]))
         )
     else:
         filterPredicates.add_filter(
@@ -437,7 +436,7 @@ def pipeline(args):
 
     if args.thres_prediction is None:
         filterPredicates.add_filter(
-            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(stats["scores_std_down"])
+            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(max(0, stats["scores_std_down"]))
         )
     else:
         filterPredicates.add_filter(
