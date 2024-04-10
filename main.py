@@ -31,9 +31,9 @@ def parse_args():
     output.add_argument("input", type=str, help="Path to input tiff file.")
     output.add_argument("output", type=str, help="Path to store output.")
     output.add_argument("--thres-nms", type=float, help="NMS threshold.", default=0.1)
-    output.add_argument("--thres-prediction", type=float, help="Prediction score threshold.", default=0.6)
-    output.add_argument("--thres-mask", type=float, help="Mask threshold.", default=0.95)
-    output.add_argument("--thres-size", type=float, help="% Size threshold for cells relative to tile size.", default=0.3)
+    output.add_argument("--thres-prediction", type=float, help="Prediction score threshold, if None it will use outliers from current input mean - 2 * std.", default=None)
+    output.add_argument("--thres-mask", type=float, help="Mask threshold, if None it will use outliers from current input mean - 2 * std.", default=None)
+    output.add_argument("--thres-size", type=float, help="Size threshold for cells in pixels, if None it will use outliers from current input mean - 2 * std.", default=None)
     output.add_argument("--tile-size", type=int, help="Size of tiles to feed the segmentor model.", default=128)
     output.add_argument("--model-path", type=str, help="Path to MaskRCNN segmentor.", default="~/model.pt")
     output.add_argument("--device", type=str, help="Device to run segmentation. eg \"cpu\" or \"cuda:N\" where N is gpu id.", default="cuda:0")
@@ -344,6 +344,7 @@ def pipeline(args):
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
     original_shape = tiff.shape
+    data = None
 
     if len(os.listdir(os.path.join(args.output, "step1"))) == 0:
         print("No previous run found")
@@ -380,6 +381,24 @@ def pipeline(args):
     
     if args.no_intermediate:
         output = data
+        output["boxes"] = output["boxes"].astype(int)
+        output["scores"] = numpy.array([x.reshape((1)) for x in output["scores"]])
+
+        size_1, size_2 = 0, 0
+
+        for mask in output["masks"]:
+            if mask.shape[0] > size_1:
+                size_1 = mask.shape[0]
+            if mask.shape[1] > size_2:
+                size_2 = mask.shape[1]
+
+        for i in range(len(output["masks"])):
+            m = torch.zeros((size_1, size_2))
+            m[0:output["masks"][i].shape[0], 0:output["masks"][i].shape[1]] = output["masks"][i]
+            output["masks"][i] = m
+
+        output["masks"] = numpy.array(output["masks"])
+
     else:
         output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
 
@@ -390,21 +409,39 @@ def pipeline(args):
 
     filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
 
-    filterPredicates.add_filter(
-        filters.CellSizePredicate.CellSizePredicate(max_threshold=1508, min_threshold=10)
-    )
+    if args.thres_size is None:
+        filterPredicates.add_filter(
+            filters.CellSizePredicate.CellSizePredicate(max_threshold=stats["box_size_std"],
+                                                        min_threshold=10)
+        )
+    else:
+        filterPredicates.add_filter(
+            filters.CellSizePredicate.CellSizePredicate(max_threshold=args.thres_size,
+                                                        min_threshold=10)
+        )
 
     filterPredicates.add_filter(
         filters.EdgeCellPredicate.EdgeCellPredicate(image_shape=tiff.shape)
     )
 
-    filterPredicates.add_filter(
-        filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(.616)
-    )
+    if args.thres_mask is None:
+        filterPredicates.add_filter(
+            filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(stats["box_perc_std_up"],
+                                                                          min_percentage=max(0, stats["box_perc_std_down"]))
+        )
+    else:
+        filterPredicates.add_filter(
+            filters.MaskQuantityPredicate.MaskQuantityPercentagePredicate(args.thres_mask)
+        )
 
-    filterPredicates.add_filter(
-        filters.ScoreThresholdPredicate.ScoreThresholdPredicate(.6)
-    )
+    if args.thres_prediction is None:
+        filterPredicates.add_filter(
+            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(stats["scores_std_down"])
+        )
+    else:
+        filterPredicates.add_filter(
+            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(args.thres_prediction)
+        )
 
     del tiff
 
