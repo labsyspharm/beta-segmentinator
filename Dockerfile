@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.0.0-devel-ubuntu22.04
+FROM nvidia/cuda:11.5.2-cudnn8-devel-ubuntu20.04
 ENV TZ=America/New_York
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN apt-get update && apt-get upgrade -y && apt-get install -y software-properties-common build-essential libssl-dev zlib1g-dev \
@@ -15,6 +15,6 @@ RUN apt-get install -y wget build-essential zlib1g-dev && \
 
 RUN apt update && apt-get install -y git  && git clone https://github.com/labsyspharm/beta-segmentinator.git && python3.10 -m pip install -r beta-segmentinator/requirements.txt
 
-COPY model.pt /home/docker/model.pt
+COPY model.pt ~/model.pt
 
-CMD ["python3.10", "beta-segmentinator/main.py"]
+CMD ["python3.10", "/beta-segmentinator/main.py"]
