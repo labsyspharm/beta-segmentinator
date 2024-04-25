@@ -81,6 +81,7 @@ def correct_coords_trim_masks(args, res, i, j):
         res["boxes"][k][3] += i
 
     res["masks"] = n_masks
+    res["boxes"] = res["boxes"].int()
 
 
 def filter_tile(args, res, tile_area, i, j):
@@ -379,13 +380,14 @@ def pipeline(args):
     #output = load_all_steps(os.path.join(args.output, "step1"))
     #del output["masks"]
     output = None
-    
+
     if args.no_intermediate:
         output = data
 
         output["boxes"] = output["boxes"].astype(int)
         output["scores"] = numpy.array([x.reshape((1)) for x in output["scores"]])
-
+        # lets not use theese masks for now
+        """
         size_1, size_2 = 0, 0
 
         for mask in output["masks"]:
@@ -395,18 +397,19 @@ def pipeline(args):
                 size_2 = mask.shape[1]
 
         for i in range(len(output["masks"])):
-            m = torch.zeros((size_1, size_2))
-            m[0:output["masks"][i].shape[0], 0:output["masks"][i].shape[1]] = output["masks"][i]
+            m = torch.zeros((size_1, size_2), dtype=int)
+            m[0:output["masks"][i].shape[0], 0:output["masks"][i].shape[1]] = (output["masks"][i] != 0).int()
             output["masks"][i] = m
-
+        
         output["masks"] = numpy.array(output["masks"])
+        """
     else:
         output = ZarrStorageHandler.SegmentinatorDatasetWrapper(os.path.join(args.output, "step1"))
 
-    print("Loaded")
-
     stats = GetStatistics.do_plots(output["boxes"], output["masks"], output["scores"], img=tiff)
     plt.savefig(os.path.join(args.output, "stats.png"), dpi=200)
+
+    print("Loaded")
 
     filterPredicates = filters.FilterPredicates.FilterPredicateHandler()
 
@@ -449,7 +452,7 @@ def pipeline(args):
 
     b = output["boxes"][index]
     s = output["scores"][index]
-    m = output["masks"][index]
+    #m = [output["masks"][i] for i in range(len(output["masks"])) if index[i]]
 
     b = torch.tensor(b.astype(numpy.float32))
     s = torch.tensor(s.reshape((-1)).astype(numpy.float32))
@@ -464,7 +467,9 @@ def pipeline(args):
 
     b = b[indexes]
     s = s[indexes]
-    m = m[indexes]
+    #m = m[indexes]
+
+    #m = [output["masks"][i] for i in indexes if index[i]]
 
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = torch.FloatTensor(tiff.astype(numpy.int32))
@@ -474,17 +479,19 @@ def pipeline(args):
                                      gmm_strategy="individual",
                                      dilation=args.dilation_pixels)
 
-    final, final_dilated = mg.generate_mask_output(tiff, b, m)
+    final, final_dilated = mg.generate_mask_output(tiff, b, None)
 
     del tiff
 
     if not args.no_viewer:
+        """
         original_mask = numpy.zeros_like(final)
 
         for i, box in enumerate(b):
             if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
                 continue
-            original_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).astype(int)
+            original_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int()
+        """
         viewer = napari.Viewer()
         original = tifffile.imread(args.input)
 
@@ -514,13 +521,13 @@ def pipeline(args):
             name="Masks",
             opacity=0.4
         )
-
+        """
         viewer.add_image(
             original_mask,
             name="Original Masks",
             opacity=0.4
         )
-
+        """
         if final_dilated is not None:
             viewer.add_labels(
                 final_dilated.astype(int),

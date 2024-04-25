@@ -15,6 +15,6 @@ RUN apt-get install -y wget build-essential zlib1g-dev && \
 
 RUN apt update && apt-get install -y git  && git clone https://github.com/labsyspharm/beta-segmentinator.git && python3.10 -m pip install -r beta-segmentinator/requirements.txt
 
-COPY model.pt ~/model.pt
+COPY model.pt /root/model.pt
 
 CMD ["python3.10", "/beta-segmentinator/main.py"]

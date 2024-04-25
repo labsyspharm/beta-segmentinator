@@ -41,12 +41,12 @@ class SegmentinatorDatasetWrapper:
 
             box = self.data["boxes"][item]
             score = self.data["scores"][item][0]
-            mask = self.data["masks"][item]
+            #mask = self.data["masks"][item]
 
             # trim the padding from the mask to match box shape
-            mask = mask[0:box[2] - box[0], 0:box[3] - box[1]]
+            #mask = mask[0:box[2] - box[0], 0:box[3] - box[1]]
 
-            return PredictionTuple(box, score, mask)
+            return PredictionTuple(box, score, None)#, mask)
 
     def __len__(self):
         return self.data["boxes"].shape[0]
@@ -82,7 +82,7 @@ class SegmentinatorDatasetWrapper:
 
         for i in tqdm.tqdm(range(len(boxes)), desc="Storing data"):
             boxes_dataset[i, :] = boxes[i]
-            masks_dataset[i, 0:masks[i].shape[0], 0:masks[i].shape[1]] = masks[i]  # watch out for shapes
+            masks_dataset[i, 0:masks[i].shape[0], 0:masks[i].shape[1]] = (masks[i] != 0).int()  # watch out for shapes
             scores_dataset[i, 0] = scores[i]
 
         store.close()
