@@ -49,7 +49,7 @@ def parse_args():
 
 
 def normalize_8_bit(image):
-    if image.dtype == numpy.int8:
+    if image.dtype == numpy.int8 or image.dtype == numpy.uint8:
         return image / (2**8)  # tecnically not necessary but for completion-wise
     elif image.dtype == numpy.float16 or image.dtype == numpy.uint16:
         return image / (2**16)
