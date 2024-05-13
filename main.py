@@ -460,7 +460,7 @@ def pipeline(args):
     indexes = torchvision.ops.nms(b, s, args.thres_nms).numpy()
 
     print("From original {} cells, after filtering we are left with {}, after NMS we are left with {}.".format(
-        len(output), index.sum(), len(indexes)
+        len(output["boxes"]), index.sum(), len(indexes)
     ))
 
     b = b.type(torch.int32)
@@ -472,7 +472,8 @@ def pipeline(args):
     #m = [output["masks"][i] for i in indexes if index[i]]
 
     tiff = load_tiff(args.input, args.dapi_channel)
-    tiff = torch.FloatTensor(tiff.astype(numpy.int32))
+    tiff = normalize_8_bit(tiff) * 255.0
+    tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
     mg = MaskGenerator.MaskGenerator(component_index=2,
                                      mask_strategy="ignore",
