@@ -79,16 +79,22 @@ def do_plots(boxes, masks, scores, img=None):
 
     x = numpy.array(scores)
     mean = x.mean()
-    std = x.mean() - 2*x.std()
+    std = x.mean() + 2*x.std()
 
     ax[2].hist(x, bins=30)
     ax[2].axvline(ymin=0, ymax=1, x=mean, label="mean: {0:.3f}".format(mean), color="green")
-    ax[2].axvline(ymin=0, ymax=1, x=std, label="mean - 2 * std: {0:.3f}".format(std), color="red")
+
+    if std > 1:
+        std = std - x.std()
+        ax[2].axvline(ymin=0, ymax=1, x=std, label="mean + std: {0:.3f}".format(std), color="red")
+    else:
+        ax[2].axvline(ymin=0, ymax=1, x=std, label="mean + 2 * std: {0:.3f}".format(std), color="red")
+
     ax[2].set_title("Scores")
     ax[2].legend()
     output["scores_mean"] = mean
-    output["scores_std_down"] = std
-    print("Prediction score mean: {} - 2*std: {}".format(mean, std))
+    output["scores_std_up"] = std
+    print("Prediction score mean: {} std: {}".format(mean, x.std()))
 
     if img is not None:
         data = list()

@@ -237,6 +237,7 @@ class MaskGenerator:
 
                 if self.dilation is not None and self.dilation != 0:
                     m_dilated = numpy.copy(m)
+                    m_dilated = numpy.pad(m_dilated, [[dilation_extra, dilation_extra], [dilation_extra, dilation_extra]], mode="constant")
                     m_dilated[scipy.ndimage.binary_dilation(m_dilated, iterations=self.dilation)] = 1
 
                 if self.mask_strategy == "xor":

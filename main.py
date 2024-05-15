@@ -439,7 +439,7 @@ def pipeline(args):
 
     if args.thres_prediction is None:
         filterPredicates.add_filter(
-            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(max(0, stats["scores_std_down"]))
+            filters.ScoreThresholdPredicate.ScoreThresholdPredicate(min(1.0, stats["scores_std_up"]))
         )
     else:
         filterPredicates.add_filter(
@@ -475,9 +475,9 @@ def pipeline(args):
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
-    mg = MaskGenerator.MaskGenerator(component_index=2,
+    mg = MaskGenerator.MaskGenerator(component_index=1,
                                      mask_strategy="ignore",
-                                     gmm_strategy="individual",
+                                     gmm_strategy="all",
                                      dilation=args.dilation_pixels)
 
     final, final_dilated = mg.generate_mask_output(tiff, b, None)
