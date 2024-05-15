@@ -4,7 +4,7 @@ import filters.FilterPredicates
 
 class CellSizePredicate(filters.FilterPredicates.Predicate):
     """
-    This filter takes upper and lower bound for cell size and selects those cells that fit in that range.
+    This filter takes upper and lower bound for cell area in pixels and selects those cells that fit in that range.
     Optionally you can set either to @code{None} and it would be ignored.
     """
 
