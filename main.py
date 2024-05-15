@@ -477,7 +477,7 @@ def pipeline(args):
 
     mg = MaskGenerator.MaskGenerator(component_index=1,
                                      mask_strategy="ignore",
-                                     gmm_strategy="all",
+                                     gmm_strategy="individual",
                                      dilation=args.dilation_pixels)
 
     final, final_dilated = mg.generate_mask_output(tiff, b, None)
