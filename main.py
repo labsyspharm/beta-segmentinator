@@ -23,6 +23,7 @@ import filters.MaskQuantityPredicate
 import filters.EdgeCellPredicate
 import filters.ScoreThresholdPredicate
 import filters.MaskQualityPredicate
+import filters.CellInsideCellFilter
 
 
 def parse_args():
@@ -259,11 +260,11 @@ def tile_extraction_part(args, tiff, model):
     data["scores"] = list()
     data["labels"] = list()
 
-    for i in tqdm.tqdm(range(0, tiff.shape[0], args.rolling_window), desc="out"):
+    for i in tqdm.tqdm(range(0, tiff.shape[0], args.rolling_window), desc="out", leave=False):
         if i + args.tile_size > tiff.shape[0]:
             break
 
-        for j in tqdm.tqdm(range(0, tiff.shape[1], args.rolling_window), desc="in"):
+        for j in tqdm.tqdm(range(0, tiff.shape[1], args.rolling_window), desc="in", leave=False):
             if j + args.tile_size > tiff.shape[1]:
                 break
 
@@ -468,6 +469,13 @@ def pipeline(args):
     b = b[indexes]
     s = s[indexes]
     #m = m[indexes]
+
+    indexes = numpy.array(filters.CellInsideCellFilter.CellIsInsidePredicate().apply({"boxes": b, "scores": s}))
+
+    b = b[indexes]
+    s = s[indexes]
+
+    print("Cell inside filter left {} cells".format(indexes.sum()))
 
     #m = [output["masks"][i] for i in indexes if index[i]]
 
