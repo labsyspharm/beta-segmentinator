@@ -416,8 +416,8 @@ def pipeline(args):
 
     if args.thres_size is None:
         filterPredicates.add_filter(
-            filters.CellSizePredicate.CellSizePredicate(max_threshold=stats["box_size_std"],
-                                                        min_threshold=10)
+            filters.CellSizePredicate.CellSizePredicate(max_threshold=stats["box_size_std_up"],
+                                                        min_threshold=stats["box_size_std_down"])
         )
     else:
         filterPredicates.add_filter(

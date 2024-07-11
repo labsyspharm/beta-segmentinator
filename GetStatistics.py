@@ -67,6 +67,7 @@ def do_plots(boxes, masks, scores, img=None):
     x = numpy.array(get_histogram_of_box_size(boxes))
     mean = x.mean()
     std = x.mean() + 2*x.std()
+    std2 = max(0, x.mean() - 2*x.std())
 
     ax[1].hist(x, bins=100)
     ax[1].axvline(ymin=0, ymax=1, x=mean, label="mean: {0:.3f}".format(mean), color="green")
@@ -74,7 +75,8 @@ def do_plots(boxes, masks, scores, img=None):
     ax[1].set_title("Box size in pixels")
     ax[1].legend()
     output["box_size_mean"] = mean
-    output["box_size_std"] = std
+    output["box_size_std_up"] = std
+    output["box_size_std_down"] = std2
     print("Box size mean: {} - 2*std: {}".format(mean, std))
 
     x = numpy.array(scores)
