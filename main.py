@@ -45,6 +45,7 @@ def parse_args():
     output.add_argument("--dilation-pixels", type=int, help="How many pixels to dilated for cytoplasm inclusion. 0 or lower skips this step.", default=3)
     output.add_argument("--no-intermediate", action="store_true", help="Do not store intermediate steps.")
     output.add_argument("--dilation-pixels-microns", type=int, help="How many microns to dilate for cytoplasm inclusion. 0 or lower skips this step.", default=None)
+    output.add_argument("--use-model-mask", action="store_true", help="Use the MaskRCNN mask output instead of the GMM")
 
     return output.parse_args(sys.argv[1:])
 
@@ -453,7 +454,7 @@ def pipeline(args):
 
     b = output["boxes"][index]
     s = output["scores"][index]
-    #m = [output["masks"][i] for i in range(len(output["masks"])) if index[i]]
+    m = [output["masks"][i] for i in index]
 
     b = torch.tensor(b.astype(numpy.float32))
     s = torch.tensor(s.reshape((-1)).astype(numpy.float32))
@@ -468,7 +469,7 @@ def pipeline(args):
 
     b = b[indexes]
     s = s[indexes]
-    #m = m[indexes]
+    m = [m[i] for i in indexes]
 
     indexes = numpy.array(filters.CellInsideCellFilter.CellIsInsidePredicate().apply({"boxes": b, "scores": s}))
 
@@ -477,33 +478,45 @@ def pipeline(args):
 
     print("Cell inside filter left {} cells".format(indexes.sum()))
 
-    #m = [output["masks"][i] for i in indexes if index[i]]
+    m = [m[i] for i in indexes]
 
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
-    mg = MaskGenerator.MaskGenerator(component_index=1,
-                                     mask_strategy="ignore",
-                                     gmm_strategy="individual",
-                                     dilation=args.dilation_pixels)
+    final, final_dilated = None, None
 
-    final, final_dilated = mg.generate_mask_output(tiff, b, None)
+    if args.use_original_mask:
+        final = numpy.zeros_like(tiff)
+        for i, box in enumerate(b):
+            if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+                continue
+            final[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int() * (i + 1)
+        final_dilated = numpy.zeros_like(tiff)
+    else:
+        mg = MaskGenerator.MaskGenerator(component_index=1,
+                                         mask_strategy="ignore",
+                                         gmm_strategy="individual",
+                                         dilation=args.dilation_pixels)
+
+        final, final_dilated = mg.generate_mask_output(tiff, b, None)
 
     del tiff
 
     if not args.no_viewer:
-        """
-        original_mask = numpy.zeros_like(final)
-
-        for i, box in enumerate(b):
-            if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
-                continue
-            original_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int()
-        """
         viewer = napari.Viewer()
-        original = tifffile.imread(args.input)
 
+        if args.use_original_mask:
+            model_mask = numpy.zeros_like(final)
+
+            for i, box in enumerate(b):
+                if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+                    continue
+                model_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int()
+
+            viewer.add_image(model_mask)
+
+        original = tifffile.imread(args.input)
         if original.ndim >= 3 and original.shape[0] > 1:
             original = original[0]
 
