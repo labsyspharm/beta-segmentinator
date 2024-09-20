@@ -454,7 +454,7 @@ def pipeline(args):
 
     b = output["boxes"][index]
     s = output["scores"][index]
-    m = [output["masks"][i] for i in index]
+    m = [output["masks"][i] for i in range(len(index)) if index[i]]
 
     b = torch.tensor(b.astype(numpy.float32))
     s = torch.tensor(s.reshape((-1)).astype(numpy.float32))
@@ -469,7 +469,7 @@ def pipeline(args):
 
     b = b[indexes]
     s = s[indexes]
-    m = [m[i] for i in indexes]
+    m = [m[i] for i in range(len(indexes)) if indexes[i]]
 
     indexes = numpy.array(filters.CellInsideCellFilter.CellIsInsidePredicate().apply({"boxes": b, "scores": s}))
 
@@ -478,7 +478,7 @@ def pipeline(args):
 
     print("Cell inside filter left {} cells".format(indexes.sum()))
 
-    m = [m[i] for i in indexes]
+    m = [m[i] for i in range(len(indexes)) if indexes[i]]
 
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = normalize_8_bit(tiff) * 255.0
@@ -491,7 +491,7 @@ def pipeline(args):
         for i, box in enumerate(b):
             if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
                 continue
-            final[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int() * (i + 1)
+            final[box[1]:box[3], box[0]:box[2]] = (m[i] != 0).int() * (i + 1)
         final_dilated = numpy.zeros_like(tiff)
     else:
         mg = MaskGenerator.MaskGenerator(component_index=1,
