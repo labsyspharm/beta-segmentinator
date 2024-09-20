@@ -477,6 +477,7 @@ def pipeline(args):
     s = s[indexes]
 
     print("Cell inside filter left {} cells".format(indexes.sum()))
+    print(b.shape, len(m))
 
     m = [m[i] for i in range(len(indexes)) if indexes[i]]
 
