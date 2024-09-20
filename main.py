@@ -486,7 +486,7 @@ def pipeline(args):
 
     final, final_dilated = None, None
 
-    if args.use_original_mask:
+    if args.use_model_mask:
         final = numpy.zeros_like(tiff)
         for i, box in enumerate(b):
             if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
@@ -506,7 +506,7 @@ def pipeline(args):
     if not args.no_viewer:
         viewer = napari.Viewer()
 
-        if args.use_original_mask:
+        if args.use_model_mask:
             model_mask = numpy.zeros_like(final)
 
             for i, box in enumerate(b):
