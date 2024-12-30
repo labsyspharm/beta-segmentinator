@@ -43,6 +43,14 @@ def get_histogram_of_box_size(boxes):
 
     return data
 
+def get_histogram_of_mask_scores(masks):
+    h = list()
+
+    for i in range(len(masks)):
+        h.extend(masks[i].flatten())
+
+    return h
+
 
 def do_plots(boxes, masks, scores, img=None):
     f, ax = plt.subplots(nrows=2, ncols=3, figsize=(32, 18))
@@ -125,6 +133,11 @@ def do_plots(boxes, masks, scores, img=None):
         output["pixel_intensity_std_down"] = std
         output["pixel_intensity_std_up"] = std2
         print("Sum of pixel intensity per prediction - Mean: {} - Up std: {} - Low std: {}".format(mean, std, std2))
+
+        x = numpy.array(get_histogram_of_mask_scores(masks))
+        ax[4].hist(x[x > .8], bins=200)
+        ax[4].set_title("Masks Scores")
+        #ax[4].axvline(ymin=0, ymax=1, x=x.std(), label="mean", color="green")
 
     return output
 

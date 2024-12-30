@@ -70,11 +70,13 @@ def filter_tile2(args, res, tile_area, i, j):
 def correct_coords_trim_masks(args, res, i, j):
     n_masks = list()
     for k in range(len(res["boxes"])):
+        t1 = res["boxes"][k][3] - res["boxes"][k][1]
+        t2 = res["boxes"][k][2] - res["boxes"][k][0]
         # trim mask to bounded box
         n_masks.append(res["masks"][k][
                        0,
-                       int(res["boxes"][k][1]):int(res["boxes"][k][3]),
-                       int(res["boxes"][k][0]):int(res["boxes"][k][2])
+                       int(res["boxes"][k][1]):int(res["boxes"][k][1] + t1),
+                       int(res["boxes"][k][0]):int(res["boxes"][k][0] + t2)
                        ])
         # update boxes coordinates from tile coord to image coord
         res["boxes"][k][0] += j
@@ -449,12 +451,14 @@ def pipeline(args):
         )
 
     del tiff
+    b = output["boxes"]
+    #m = output["masks"]
 
     index = filterPredicates.apply(output)
 
     b = output["boxes"][index]
     s = output["scores"][index]
-    m = [output["masks"][i] for i in range(len(index)) if index[i]]
+    #m = [output["masks"][i] for i in range(len(index)) if index[i]]
 
     b = torch.tensor(b.astype(numpy.float32))
     s = torch.tensor(s.reshape((-1)).astype(numpy.float32))
@@ -469,7 +473,7 @@ def pipeline(args):
 
     b = b[indexes]
     s = s[indexes]
-    m = [m[i] for i in range(len(indexes)) if indexes[i]]
+    #m = [m[i] for i in range(len(indexes)) if indexes[i]]
 
     indexes = numpy.array(filters.CellInsideCellFilter.CellIsInsidePredicate().apply({"boxes": b, "scores": s}))
 
@@ -479,20 +483,22 @@ def pipeline(args):
     print("Cell inside filter left {} cells".format(indexes.sum()))
     print(b.shape, len(m))
 
-    m = [m[i] for i in range(len(indexes)) if indexes[i]]
+    #m = [m[i] for i in range(len(indexes)) if indexes[i]]
 
     tiff = load_tiff(args.input, args.dapi_channel)
     tiff = normalize_8_bit(tiff) * 255.0
     tiff = torch.FloatTensor(tiff.astype(numpy.float16))
 
     final, final_dilated = None, None
-
+    model_final = None
+    """
     if args.use_model_mask:
-        final = numpy.zeros_like(tiff)
+        model_final = numpy.zeros_like(tiff)
         for i, box in enumerate(b):
-            if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
-                continue
-            final[box[1]:box[3], box[0]:box[2]] = (m[i] != 0).int() * (i + 1)
+            #if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+            #    continue
+            #final[box[1]:box[3], box[0]:box[2]] = (m[i] != 0).int() * (i + 1)
+            model_final[box[1]:box[1] + m[i].shape[0], box[0]:box[0] + m[i].shape[1]] = (m[i] != 0).int() * (i + 1)
         final_dilated = numpy.zeros_like(tiff)
     else:
         mg = MaskGenerator.MaskGenerator(component_index=1,
@@ -501,21 +507,27 @@ def pipeline(args):
                                          dilation=args.dilation_pixels)
 
         final, final_dilated = mg.generate_mask_output(tiff, b, None)
+    """
+    model_final = numpy.zeros_like(tiff)
+    #for i, box in enumerate(b):
+    #    # if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
+    #    #    continue
+    #    # final[box[1]:box[3], box[0]:box[2]] = (m[i] != 0).int() * (i + 1)
+    #    model_final[box[1]:box[1] + m[i].shape[0], box[0]:box[0] + m[i].shape[1]] = (m[i] >= 0.975).int() * (i + 1)
+    final_dilated = numpy.zeros_like(tiff)
+
+    mg = MaskGenerator.MaskGenerator(component_index=1,
+                                     mask_strategy="ignore",
+                                     gmm_strategy="individual",
+                                     dilation=args.dilation_pixels)
+    final, final_dilated = mg.generate_mask_output(tiff, b, None)
 
     del tiff
-
     if not args.no_viewer:
         viewer = napari.Viewer()
 
         if args.use_model_mask:
-            model_mask = numpy.zeros_like(final)
-
-            for i, box in enumerate(b):
-                if box[3] - box[1] != m[i].shape[0] or box[2] - box[0] != m[i].shape[1]:
-                    continue
-                model_mask[box[1]:box[3], box[0]:box[2]] += (m[i] != 0).int()
-
-            viewer.add_image(model_mask)
+            viewer.add_labels(model_final.astype(int), name="Model masks", opacity=0.4)
 
         original = tifffile.imread(args.input)
         if original.ndim >= 3 and original.shape[0] > 1:
@@ -564,6 +576,7 @@ def pipeline(args):
 
     if final_dilated is not None:
         tifffile.imwrite(os.path.join(args.output, "output_dilated.tiff"), final_dilated)
+
 
     print("Done :)")
 
