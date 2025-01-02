@@ -31,6 +31,9 @@ class MaskGenerator:
         return x[i], y[i]
 
     def _calculate_threshold_gmm(self, tile: torch.tensor) -> float:
+        if tile[tile > 0].sum() < 3:
+            return 0.00001
+
         gmm = sklearn.mixture.GaussianMixture(n_components=3)
         gmm.fit(
             torch.log10(tile[tile > 0]).reshape((-1, 1))
